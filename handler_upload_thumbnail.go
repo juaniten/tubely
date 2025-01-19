@@ -75,7 +75,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	fileExtension := strings.TrimPrefix(mediaType, "image/")
-	imagePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", video.ID, fileExtension))
+	encodedString, err := getRandom32ByteHex()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error generation random number", err)
+	}
+	imagePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%s.%s", encodedString, fileExtension))
 	imageFile, err := os.Create(imagePath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error creating image file", err)

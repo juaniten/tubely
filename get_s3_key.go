@@ -10,8 +10,7 @@ import (
 	"os/exec"
 )
 
-func getS3KeyFromFile(filepath string) (string, error) {
-	fmt.Println(filepath)
+func (cfg *apiConfig) getS3KeyFromFile(filepath string) (string, error) {
 	aspectRatio, err := getVideoAspectRatio(filepath)
 	if err != nil {
 		return "", err

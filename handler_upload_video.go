@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,13 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/google/uuid"
 )
 
@@ -107,7 +104,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	key, err := getS3KeyFromFile(tempFile.Name())
+	key, err := cfg.getS3KeyFromFile(tempFile.Name())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error generating key for the video", err)
 		return
@@ -123,22 +120,16 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	bucketAndKey := fmt.Sprintf("%s,%s", cfg.s3Bucket, key)
+	cloudfrontUrl := fmt.Sprintf("%s/%s", cfg.s3CfDistribution, key)
 	video.UpdatedAt = time.Now()
-	video.VideoURL = &bucketAndKey
+	video.VideoURL = &cloudfrontUrl
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error updating video", err)
 		return
 	}
 
-	presignedVideo, err := cfg.dbVideoToSignedVideo(video)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error signing video", err)
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, presignedVideo)
+	respondWithJSON(w, http.StatusOK, video)
 }
 
 func processVideoForFastStart(filePath string) (string, error) {
@@ -149,38 +140,4 @@ func processVideoForFastStart(filePath string) (string, error) {
 		return "", errors.New("error processing video for fast start")
 	}
 	return outputFilePath, nil
-}
-
-func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
-	presignClient := s3.NewPresignClient(s3Client)
-
-	params := &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	}
-
-	presignedRequest, err := presignClient.PresignGetObject(context.Background(), params, s3.WithPresignExpires(expireTime))
-	if err != nil {
-		return "", fmt.Errorf("failed to presign get object request: %w", err)
-	}
-
-	return presignedRequest.URL, nil
-}
-
-func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
-	if video.VideoURL == nil {
-		return database.Video{}, errors.New("invalid bucket and key values retrieved from database")
-	}
-	url := strings.Split(*video.VideoURL, ",")
-	if len(url) < 2 {
-		return database.Video{}, errors.New("invalid bucket and key values retrieved from database")
-	}
-	bucket := url[0]
-	key := url[1]
-	presignedUrl, err := generatePresignedURL(cfg.s3Client, bucket, key, time.Minute)
-	if err != nil {
-		return database.Video{}, err
-	}
-	video.VideoURL = &presignedUrl
-	return video, nil
 }
